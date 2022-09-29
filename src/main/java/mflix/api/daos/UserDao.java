@@ -149,11 +149,22 @@ public class UserDao extends AbstractMFlixDao {
      *                        ones. Cannot be set to null value
      * @return User object that just been updated.
      */
-    public boolean updateUserPreferences(String email, Map<String, ?> userPreferences) {
+    public boolean updateUserPreferences(String email, Map<String, String> userPreferences) {
         //TODO> Ticket: User Preferences - implement the method that allows for user preferences to
         // be updated.
+        if (userPreferences == null) {
+            throw new IncorrectDaoOperation("Preferences cannot be null");
+        }
+
+        User user = usersCollection.find(Filters.eq("email", email)).first();
+        if(user != null) {
+            user.setPreferences(userPreferences);
+            usersCollection.replaceOne(Filters.eq("email", email), user);
+        }
+
+
         //TODO > Ticket: Handling Errors - make this method more robust by
         // handling potential exceptions when updating an entry.
-        return false;
+        return true;
     }
 }
