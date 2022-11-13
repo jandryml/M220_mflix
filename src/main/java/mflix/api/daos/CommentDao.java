@@ -26,9 +26,13 @@ import org.springframework.stereotype.Component;
 
 import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 
+import static com.mongodb.client.model.Accumulators.sum;
+import static com.mongodb.client.model.Aggregates.*;
+import static com.mongodb.client.model.Sorts.descending;
 import static org.bson.codecs.configuration.CodecRegistries.fromProviders;
 import static org.bson.codecs.configuration.CodecRegistries.fromRegistries;
 
@@ -76,12 +80,16 @@ public class CommentDao extends AbstractMFlixDao {
      * returns the resulting Comment object.
      */
     public Comment addComment(Comment comment) {
+        if (comment.getId() == null || comment.getId().isEmpty()) {
+            throw new IncorrectDaoOperation("Comment objects need to have an ID field set.");
+        }
 
-        // TODO> Ticket - Update User reviews: implement the functionality that enables adding a new
-        // comment.
-        // TODO> Ticket - Handling Errors: Implement a try catch block to
-        // handle a potential write exception when given a wrong commentId.
-        return null;
+        try {
+            commentCollection.insertOne(comment);
+            return comment;
+        } catch (MongoWriteException e) {
+            throw new IncorrectDaoOperation("Error while adding comment");
+        }
     }
 
     /**
@@ -99,11 +107,19 @@ public class CommentDao extends AbstractMFlixDao {
      */
     public boolean updateComment(String commentId, String text, String email) {
 
-        // TODO> Ticket - Update User reviews: implement the functionality that enables updating an
-        // user own comments
-        // TODO> Ticket - Handling Errors: Implement a try catch block to
-        // handle a potential write exception when given a wrong commentId.
-        return false;
+        Bson filter = Filters.and(
+                Filters.eq("email", email),
+                Filters.eq("_id", new ObjectId(commentId)));
+        Bson update = Updates.combine(
+                Updates.set("text", text),
+                Updates.set("date", new Date()));
+
+        try {
+            return commentCollection.updateOne(filter, update).getMatchedCount() > 0;
+        } catch (MongoWriteException e) {
+            throw new IncorrectDaoOperation("Error while updating comment");
+        }
+
     }
 
     /**
@@ -114,12 +130,20 @@ public class CommentDao extends AbstractMFlixDao {
      * @return true if successful deletes the comment.
      */
     public boolean deleteComment(String commentId, String email) {
-        // TODO> Ticket Delete Comments - Implement the method that enables the deletion of a user
-        // comment
-        // TIP: make sure to match only users that own the given commentId
-        // TODO> Ticket Handling Errors - Implement a try catch block to
-        // handle a potential write exception when given a wrong commentId.
-        return false;
+        if (commentId == null || commentId.isEmpty()) {
+            throw new IllegalArgumentException("CommentID is required.");
+        }
+
+        Bson filter = Filters.and(
+                Filters.eq("_id", new ObjectId(commentId)),
+                Filters.eq("email", email)
+        );
+
+        try {
+            return commentCollection.deleteOne(filter).getDeletedCount() > 0;
+        } catch (MongoWriteException e) {
+            throw new IncorrectDaoOperation("Error while deleting comment");
+        }
     }
 
     /**
@@ -131,12 +155,13 @@ public class CommentDao extends AbstractMFlixDao {
      */
     public List<Critic> mostActiveCommenters() {
         List<Critic> mostActive = new ArrayList<>();
-        // // TODO> Ticket: User Report - execute a command that returns the
-        // // list of 20 users, group by number of comments. Don't forget,
-        // // this report is expected to be produced with an high durability
-        // // guarantee for the returned documents. Once a commenter is in the
-        // // top 20 of users, they become a Critic, so mostActive is composed of
-        // // Critic objects.
+
+        List<Bson> pipeline = Arrays.asList(
+                group("$email", sum("count", 1L)),
+                sort(descending("count")),
+                limit(20));
+
+        commentCollection.aggregate(pipeline, Critic.class).iterator().forEachRemaining(mostActive::add);
         return mostActive;
     }
 }
